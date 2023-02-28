@@ -38,6 +38,8 @@ public abstract class ConverterBase extends PGNBaseListener {
 
     private final List<String> moveSequence = new ArrayList<>();
 
+    private int storedMoveNumber = 0;
+
     private void endMoveSequence() {
         if (!moveSequence.isEmpty()) {
             onMoveSequence(moveSequence);
@@ -77,15 +79,24 @@ public abstract class ConverterBase extends PGNBaseListener {
         onMove(moveText, NAGs);
 
         final StringBuilder fullMoveText = new StringBuilder();
+        if (moveSequence.isEmpty() && ctx.move_number_indication() == null)
+        {
+            // this must be a black move after a diagram. Therefore, the move before the diagram must have had a move number indication, and storedMoveNumber is therefore not 0.
+            fullMoveText.append(storedMoveNumber).append("... ");
+            storedMoveNumber = 0;
+        }
         fullMoveText.append(moveText);
         if (!NAGs.isEmpty())
             NAGs.stream().forEachOrdered(nag -> fullMoveText.append(" $").append(nag));
+
         moveSequence.add(fullMoveText.toString());
 
         if (printDiagram.get()) {
             endMoveSequence();
+            storedMoveNumber = ctx.move_number_indication() != null? Integer.parseInt(ctx.move_number_indication().INTEGER().getText()) : 0;
             onDiagram(); // will need diagram settings from comment in the future
         }
+        // TODO if a diagram is printed after a white move, a move number must be enforced on the following black move
         if (ctx.comment() != null) {
             final String comment = ctx.comment().BRACE_COMMENT().getText();
             if (StringUtils.isNotEmpty(comment)) {

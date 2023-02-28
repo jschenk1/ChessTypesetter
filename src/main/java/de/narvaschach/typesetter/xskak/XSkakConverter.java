@@ -9,29 +9,44 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Stack;
 import java.util.UUID;
 
 public class XSkakConverter extends ConverterBase{
 
-    private String curGameID = "";
-    private final StringBuilder sb;
 
-    private int variationDepth = 0;
+    private final List<String> lines = new ArrayList<>();
+    private StringBuilder sb;
 
-    private List<String> nextMoveSeqOptions = new ArrayList<>();
+    private final Stack<String> varIDs = new Stack<>();
+
+    private final List<String> nextMoveSeqOptions = new ArrayList<>();
 
     public XSkakConverter() {
         sb = new StringBuilder();
     }
 
     public byte[] getBytes() {
-        return sb.toString().getBytes(StandardCharsets.UTF_8);
+        return StringUtils.join(lines,"\\\\\n").getBytes(StandardCharsets.UTF_8);
     }
 
+    private void linebreak() {
+        linebreak(false);
+    }
+
+    private void linebreak(boolean force) {
+        if (!force && sb.isEmpty()) return; // avoid double line breaks
+
+        lines.add(sb.toString());
+        sb = new StringBuilder();
+    }
 
     protected void onTagSection (final Map<String,String> tags) {
-        curGameID = UUID.randomUUID().toString();
-        variationDepth = 0;
+        final String curGameID = UUID.randomUUID().toString();
+
+        varIDs.clear();
+        varIDs.push(curGameID);
+
         sb.append("\\newchessgame[id=" + curGameID);
         if (tags.containsKey("FEN")) {
             final String[] fenParts = tags.get("FEN").split(" ");
@@ -49,7 +64,8 @@ public class XSkakConverter extends ConverterBase{
             else if (tags.containsKey("WhiteElo"))
                 sb.append(" (").append(tags.get("WhiteElo")).append(")");
 
-            sb.append("\\\\\n$\\bullet$ ").append(tags.get("Black"));
+            linebreak();
+            sb.append("$\\bullet$ ").append(tags.get("Black"));
             if (tags.containsKey("BlackDWZ"))
                 sb.append(" (").append(tags.get("BlackDWZ")).append(")");
             else if (tags.containsKey("BlackElo"))
@@ -58,29 +74,33 @@ public class XSkakConverter extends ConverterBase{
             final String siteOrEvent = StringUtils.firstNonBlank(tags.get("Site"), tags.get("Event"));
             final String year = StringUtils.isNotEmpty(tags.get("Date")) && tags.get("Date").length()>=4? tags.get("Date").substring(0,4) : "";
             if (siteOrEvent != null) {
-                sb.append("\\\\\n").append(siteOrEvent);
+                linebreak();
+                sb.append(siteOrEvent);
                 if (!siteOrEvent.contains(year))
                     sb.append(" " + year);
             }
-            else if (StringUtils.isNotEmpty(year))
-                sb.append("\\\\\n").append(year);
-            if (StringUtils.isNotEmpty(tags.get("ECO")))
-                sb.append("\\\\\n").append(tags.get("ECO"));
-            sb.append("\\\\\n}\n");
+            else if (StringUtils.isNotEmpty(year) && !"????".equals(year)) {
+                linebreak();
+                sb.append(year);
+            }
+            if (StringUtils.isNotEmpty(tags.get("ECO"))) {
+                linebreak();
+                sb.append(tags.get("ECO"));
+            }
+            linebreak();
+            sb.append("}\n");
 
-            if (tags.containsKey("FEN"))
-                sb.append("\\chessboard \\\\\n");
+            if (tags.containsKey("FEN")) {
+                sb.append("\\chessboard ");
+                linebreak();
+            }
         }
     }
 
     protected void onMoveSequence (final List<String> moves) {
-        // TODO: this is sufficient for todays training material, but \variation doesn't update xskaks
-        //  internal game state. This effectively means that diagrams within variations don't work. They
-        //  always show the mainline position.
-        if (variationDepth==0)
-            sb.append("\\mainline");
-        else
-            sb.append("\\variation");
+        if (varIDs.size() <= 1)
+            linebreak(true); // extra line break when returning to main line
+        sb.append("\\mainline");
         if (!nextMoveSeqOptions.isEmpty()) {
             sb.append("[").append(StringUtils.join(nextMoveSeqOptions, ",")).append("]");
             nextMoveSeqOptions.clear();
@@ -88,28 +108,44 @@ public class XSkakConverter extends ConverterBase{
         sb.append("{");
         moves.stream().forEach(sb::append);
         sb.append("}");
+
     }
 
     protected void onVariationStart() {
-        variationDepth++;
+        linebreak();
         nextMoveSeqOptions.add("invar");
-        sb.append(" \\\\\n");
+        final String newVarID = UUID.randomUUID().toString();
+        final String parentID = varIDs.peek();
+        varIDs.push(newVarID);
+        sb.append("\\newchessgame[newvar=").append(parentID).append(",id=").append(newVarID).append("]\n");
     }
 
     protected void onVariationEnd() {
-        variationDepth--;
+        linebreak();
+        varIDs.pop();
+        sb.append("\\resumechessgame[id=").append(varIDs.peek()).append("]\n");
         nextMoveSeqOptions.add("outvar");
-        sb.append(" \\\\\n");
     }
 
     protected void onDiagram() {
-        sb.append("\\\\\n\\chessboard \\\\\n");
+        linebreak();
+        sb.append("\\chessboard[");
+        if (varIDs.size() <= 1)
+            sb.append("smallboard,fontsize=17pt");
+        else if (varIDs.size() == 2)
+            sb.append("tinyboard,fontsize=13pt");
+        else
+            sb.append("tinyboard,fontsize=13pt,piececolor=black!70,fieldcolor=black!70,"+
+                    "bordercolor=black!70,hlabel=false,vlabel=false,setfontcolors");
+        sb.append("]");
+        linebreak();
     }
 
     protected void onComment(final String commentText) {
         if (!Character.isLowerCase(commentText.trim().charAt(0)))
             sb.append("\\\\");
         // IMPL: may produce illegal TeX when the comment contains certain symbols such as {.
-        sb.append("\n").append(commentText).append(" \\\\\n");
+        sb.append("\n").append(commentText);
+        linebreak();
     }
 }
