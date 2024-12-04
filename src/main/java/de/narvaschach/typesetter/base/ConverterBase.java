@@ -29,6 +29,8 @@ public abstract class ConverterBase extends PGNBaseListener {
 
     protected void onVariationEnd() {}
 
+    protected void onGameTermination(final String result) {}
+
     private static boolean isDiagramNAG(Integer nag) {
         return nag == 220 //ChessPad
                 || nag == 221 //ChessPad
@@ -96,7 +98,6 @@ public abstract class ConverterBase extends PGNBaseListener {
             storedMoveNumber = ctx.move_number_indication() != null? Integer.parseInt(ctx.move_number_indication().INTEGER().getText()) : 0;
             onDiagram(); // will need diagram settings from comment in the future
         }
-        // TODO if a diagram is printed after a white move, a move number must be enforced on the following black move
         if (ctx.comment() != null) {
             final String comment = ctx.comment().BRACE_COMMENT().getText();
             if (StringUtils.isNotEmpty(comment)) {
@@ -110,10 +111,23 @@ public abstract class ConverterBase extends PGNBaseListener {
     public void enterRecursive_variation(PGNParser.Recursive_variationContext ctx) {
         endMoveSequence();
         onVariationStart();
+        if (ctx.comment_before() != null) {
+            final String comment = ctx.comment_before().getText();
+            if (StringUtils.isNotEmpty(comment)) {
+                onComment(comment.substring(1,comment.length()-1));
+            }
+        }
     }
+
     @Override
     public void exitRecursive_variation(PGNParser.Recursive_variationContext ctx) {
         endMoveSequence();
         onVariationEnd();
+    }
+
+    @Override
+    public void enterGame_termination(PGNParser.Game_terminationContext ctx) {
+        endMoveSequence();
+        this.onGameTermination(ctx.getText());
     }
 }

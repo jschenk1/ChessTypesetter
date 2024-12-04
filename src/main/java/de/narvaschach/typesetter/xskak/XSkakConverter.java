@@ -1,13 +1,11 @@
 package de.narvaschach.typesetter.xskak;
 
 import de.narvaschach.typesetter.base.ConverterBase;
-import nl.bigo.pp.PGNParser;
 import org.apache.commons.lang3.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Stack;
 import java.util.UUID;
@@ -27,7 +25,8 @@ public class XSkakConverter extends ConverterBase{
     }
 
     public byte[] getBytes() {
-        return StringUtils.join(lines,"\\\\\n").getBytes(StandardCharsets.UTF_8);
+        linebreak();
+        return (StringUtils.join(lines,"\\\\\n")).getBytes(StandardCharsets.UTF_8);
     }
 
     private void linebreak() {
@@ -127,6 +126,12 @@ public class XSkakConverter extends ConverterBase{
         nextMoveSeqOptions.add("outvar");
     }
 
+    protected void onGameTermination(final String result) {
+        // IMPL: possible missing outvar
+        linebreak();
+        sb.append("\\textbf{").append(result).append("}");
+    }
+
     protected void onDiagram() {
         linebreak();
         sb.append("\\chessboard[");
@@ -142,10 +147,12 @@ public class XSkakConverter extends ConverterBase{
     }
 
     protected void onComment(final String commentText) {
-        if (!Character.isLowerCase(commentText.trim().charAt(0)))
-            sb.append("\\\\");
+        if (Character.isUpperCase(commentText.trim().charAt(0)))
+            linebreak();
+        else
+            sb.append("\n");
         // IMPL: may produce illegal TeX when the comment contains certain symbols such as {.
-        sb.append("\n").append(commentText);
+        sb.append(commentText);
         linebreak();
     }
 }
